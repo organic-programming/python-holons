@@ -1,7 +1,8 @@
 # python-holons
 
-**Python SDK for Organic Programming** — transport, serve, identity,
-and grpc client utilities.
+**Python SDK for Organic Programming** — transport helpers, a full
+`serve` runner, identity parsing, discovery, `connect()`, and Holon-RPC
+client/server utilities.
 
 ## Install
 
@@ -18,61 +19,24 @@ pip install -e .
 | `holons.transport` | `listen(uri)`, `parse_uri(uri)`, `scheme(uri)` |
 | `holons.serve` | `parse_flags(args)`, `run_with_options(uri, register_fn, ...)` |
 | `holons.identity` | `parse_holon(path)` |
-| `holons.grpcclient` | `dial`, `dial_uri`, `dial_mem`, `dial_websocket` |
-| `holons.holonrpc` | `HolonRPCClient` + `HolonRPCServer` |
+| `holons.discover` | `discover(root)`, `discover_local()`, `discover_all()`, `find_by_slug(slug)`, `find_by_uuid(prefix)` |
+| `holons.connect` | `connect(target, opts=None)`, `disconnect(channel)`, `ConnectOptions` |
+| `holons.grpcclient` | transport-aware gRPC dial helpers |
+| `holons.holonrpc` | `HolonRPCClient` and `HolonRPCServer` |
 
-## Transport URI support
+## Current scope
 
-Recognized URI schemes:
+- Native gRPC over `tcp://` and `unix://`
+- In-process `mem://` adapter for tests and composition
+- Discovery scans local, `$OPBIN`, and cache roots
+- `connect()` resolves direct targets or slugs and can launch daemons
+  over TCP or stdio
+- Holon-RPC is implemented as JSON-RPC 2.0 over WebSocket
 
-- `tcp://`
-- `unix://`
-- `stdio://`
-- `mem://`
-- `ws://`
-- `wss://`
+## Current gaps vs Go
 
-`serve.run_with_options(...)` supports:
-
-- native gRPC: `tcp://`, `unix://`
-- in-process adapter: `mem://`
-
-For `stdio://` and `ws://`/`wss://` server loops, use `holons.transport.listen()`
-with a custom runner.
-
-## Holon-RPC (JSON-RPC 2.0 over WebSocket)
-
-`HolonRPCClient` implements the protocol in `PROTOCOL.md` §4:
-
-- subprotocol: `holon-rpc`
-- wire format: JSON-RPC `{\"jsonrpc\":\"2.0\", ...}`
-- bidirectional requests with handler registration
-- server-originated request ID validation (`s` prefix)
-- heartbeat: `rpc.heartbeat`
-- reconnect: exponential backoff
-
-`HolonRPCServer` provides server-side promotion for Phase 3:
-
-- accepts WebSocket connections (configurable `ws://` / `wss://` URL)
-- negotiates `holon-rpc` subprotocol only
-- dispatches incoming method calls via `register(...)`
-- supports server-initiated calls to connected clients via `invoke(...)`
-
-## Parity Notes vs Go Reference
-
-Implemented:
-
-- Holon-RPC client (connect/invoke/register/close, heartbeat, reconnect)
-- Holon-RPC server (bidirectional JSON-RPC 2.0 over WebSocket)
-- gRPC listen/dial on `tcp://` and `unix://`
-- in-process `mem://` adapter for tests/composition
-- gRPC `ws://` / `wss://` dial via local TCP↔WebSocket tunnel bridge
-
-Not currently achievable in pure `grpcio` (justified gap):
-
-- `Dial(\"stdio://\")` for gRPC channels:
-  - `grpcio` does not expose a public API to bind HTTP/2 transport directly to arbitrary stdin/stdout byte streams.
-  - `holons.grpcclient.dial_stdio()` is intentionally `NotImplementedError` with explicit guidance.
+- `grpcio` still does not expose a raw stdio transport, so stdio support
+  remains process-bridge based rather than a direct HTTP/2 pipe binding.
 
 ## Test
 
