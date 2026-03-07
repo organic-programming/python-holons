@@ -1,12 +1,11 @@
-"""Tests for holons.identity — HOLON.md parser."""
+"""Tests for holons.identity — holon.yaml parser."""
 
 from holons.identity import parse_holon
 
 
 def test_parse_holon(tmp_path):
-    holon_md = tmp_path / "HOLON.md"
-    holon_md.write_text(
-        '---\n'
+    holon_yaml = tmp_path / "holon.yaml"
+    holon_yaml.write_text(
         'uuid: "abc-123"\n'
         'given_name: "test-holon"\n'
         'family_name: "Test"\n'
@@ -20,11 +19,9 @@ def test_parse_holon(tmp_path):
         'reproduction: "manual"\n'
         'generated_by: "sophia-who"\n'
         'proto_status: draft\n'
-        '---\n'
-        '# test-holon\n'
     )
 
-    identity = parse_holon(holon_md)
+    identity = parse_holon(holon_yaml)
     assert identity.uuid == "abc-123"
     assert identity.given_name == "test-holon"
     assert identity.family_name == "Test"
@@ -34,25 +31,20 @@ def test_parse_holon(tmp_path):
 
 
 def test_parse_holon_missing_fields(tmp_path):
-    holon_md = tmp_path / "HOLON.md"
-    holon_md.write_text(
-        '---\n'
-        'uuid: "minimal"\n'
-        '---\n'
-        '# Minimal\n'
-    )
+    holon_yaml = tmp_path / "holon.yaml"
+    holon_yaml.write_text('uuid: "minimal"\n')
 
-    identity = parse_holon(holon_md)
+    identity = parse_holon(holon_yaml)
     assert identity.uuid == "minimal"
     assert identity.given_name == ""
 
 
-def test_parse_holon_missing_frontmatter(tmp_path):
-    holon_md = tmp_path / "HOLON.md"
-    holon_md.write_text("# No frontmatter\n")
+def test_parse_holon_invalid_mapping(tmp_path):
+    holon_yaml = tmp_path / "holon.yaml"
+    holon_yaml.write_text("- not\n- a\n- mapping\n")
 
     try:
-        parse_holon(holon_md)
+        parse_holon(holon_yaml)
         assert False, "should have raised"
     except ValueError as e:
-        assert "frontmatter" in str(e)
+        assert "mapping" in str(e)

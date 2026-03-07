@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-"""Parse HOLON.md identity files.
-
-A HOLON.md file contains YAML frontmatter between --- delimiters,
-followed by markdown content.
-"""
+"""Parse holon.yaml identity files."""
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,7 +11,7 @@ import yaml
 
 @dataclass
 class HolonIdentity:
-    """Parsed identity from a HOLON.md file."""
+    """Parsed identity from a holon.yaml file."""
 
     uuid: str = ""
     given_name: str = ""
@@ -34,24 +30,17 @@ class HolonIdentity:
 
 
 def parse_holon(path: str | Path) -> HolonIdentity:
-    """Parse a HOLON.md file and return its identity.
+    """Parse a holon.yaml file and return its identity.
 
     Raises FileNotFoundError if the file doesn't exist.
-    Raises ValueError if the frontmatter is invalid.
+    Raises ValueError if the YAML document is not a mapping.
     """
     path = Path(path)
     text = path.read_text(encoding="utf-8")
 
-    # Extract YAML frontmatter
-    if not text.startswith("---"):
-        raise ValueError(f"{path}: missing YAML frontmatter")
-
-    end = text.index("---", 3)
-    frontmatter = text[3:end].strip()
-
-    data = yaml.safe_load(frontmatter)
+    data = yaml.safe_load(text)
     if not isinstance(data, dict):
-        raise ValueError(f"{path}: frontmatter is not a YAML mapping")
+        raise ValueError(f"{path}: holon.yaml must be a YAML mapping")
 
     return HolonIdentity(
         uuid=data.get("uuid", ""),

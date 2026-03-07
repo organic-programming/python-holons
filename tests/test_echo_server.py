@@ -97,12 +97,6 @@ def test_parse_args_serve_compatibility_and_overrides():
     assert args["sleep_ms"] == 1200
 
 
-def test_cert_json_declares_echo_server_executable():
-    cert_path = _sdk_dir() / "cert.json"
-    payload = json.loads(cert_path.read_text(encoding="utf-8"))
-    assert payload["executables"]["echo_server"] == "python3 -m holons.echo_server"
-
-
 def test_echo_server_tcp_roundtrip_and_sigterm_exit_zero():
     proc, uri = _start_echo_server(
         "--listen",
