@@ -16,6 +16,7 @@ from typing import Callable
 import grpc
 from grpc_reflection.v1alpha import reflection
 
+from holons import describe
 from holons.transport import DEFAULT_URI, scheme
 from holons.runtime_state import register_mem_endpoint, unregister_mem_endpoint, normalize_mem_uri
 
@@ -60,6 +61,7 @@ def run_with_options(
         ],
     )
     register_fn(server)
+    _auto_register_holonmeta(server)
 
     reflection_enabled = False
     if reflect:
@@ -123,6 +125,13 @@ def run_with_options(
             unregister_mem_endpoint(mem_key)
         if stdio_bridge is not None:
             stdio_bridge.close()
+
+
+def _auto_register_holonmeta(server: grpc.Server) -> None:
+    holon_yaml_path = "holon.yaml"
+    if not os.path.exists(holon_yaml_path):
+        return
+    describe.register(server, "./protos", holon_yaml_path)
 
 
 class _StdioServeBridge:

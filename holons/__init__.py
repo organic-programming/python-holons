@@ -2,7 +2,7 @@
 
 from importlib import import_module
 
-__all__ = ["transport", "serve", "identity", "discover", "connect", "grpcclient", "holonrpc"]
+__all__ = ["transport", "serve", "identity", "discover", "connect", "grpcclient", "holonrpc", "describe"]
 
 
 def __getattr__(name: str):

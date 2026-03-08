@@ -101,6 +101,7 @@ def connect(target: str, opts: ConnectOptions | None = None) -> grpc.Channel:
             _stop_process(proc)
 
     if not ephemeral:
+        _reap_process(proc)
         try:
             _write_port_file(port_file, advertised_uri)
         except Exception:
@@ -261,6 +262,16 @@ def _stop_process(proc: subprocess.Popen[str] | None) -> None:
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait(timeout=2)
+
+
+def _reap_process(proc: subprocess.Popen[str]) -> None:
+    def _waiter() -> None:
+        try:
+            proc.wait()
+        except Exception:
+            return
+
+    threading.Thread(target=_waiter, daemon=True).start()
 
 
 def _is_direct_target(target: str) -> bool:
