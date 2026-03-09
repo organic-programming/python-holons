@@ -22,7 +22,7 @@ DEFAULT_TIMEOUT = 5.0
 @dataclass(slots=True)
 class ConnectOptions:
     timeout: float = DEFAULT_TIMEOUT
-    transport: str = "tcp"
+    transport: str = "stdio"
     start: bool = True
     port_file: str = ""
 
@@ -81,17 +81,17 @@ def connect(target: str, opts: ConnectOptions | None = None) -> grpc.Channel:
         raise ValueError(f'holon "{trimmed}" not found')
 
     binary_path = _resolve_binary_path(entry)
-    if options.transport == "stdio":
-        channel = grpcclient.dial_stdio(binary_path, "serve", "--listen", "stdio://")
-        _wait_ready(channel, options.timeout)
-        return channel
-
     port_file = options.port_file or _default_port_file_path(entry.slug)
     reusable = _usable_port_file(port_file, options.timeout)
     if reusable is not None:
         return reusable
     if not options.start:
         raise ValueError(f'holon "{trimmed}" is not running')
+
+    if options.transport == "stdio":
+        channel = grpcclient.dial_stdio(binary_path, "serve", "--listen", "stdio://")
+        _wait_ready(channel, options.timeout)
+        return channel
 
     advertised_uri, proc = _start_tcp_holon(binary_path, options.timeout)
     channel = _dial_ready(_normalize_dial_target(advertised_uri), options.timeout)
@@ -121,7 +121,7 @@ def disconnect(channel: grpc.Channel) -> None:
 def _normalize_options(opts: ConnectOptions | None) -> ConnectOptions:
     options = opts or ConnectOptions()
     timeout = options.timeout if options.timeout and options.timeout > 0 else DEFAULT_TIMEOUT
-    transport = (options.transport or "tcp").strip().lower()
+    transport = (options.transport or "stdio").strip().lower()
     if transport not in {"tcp", "stdio"}:
         raise ValueError(f"unsupported transport {options.transport!r}")
     return ConnectOptions(

@@ -80,12 +80,15 @@ def _create_holon_fixture(tmp_path: Path, given_name: str, family_name: str) -> 
     binary_dir.mkdir(parents=True, exist_ok=True)
 
     pid_file = tmp_path / f"{slug}.pid"
+    args_file = tmp_path / f"{slug}.args"
     wrapper = binary_dir / "echo-wrapper"
     wrapper.write_text(
         "\n".join(
             [
                 "#!/bin/sh",
                 f"printf '%s\\n' \"$$\" > {shlex.quote(str(pid_file))}",
+                f": > {shlex.quote(str(args_file))}",
+                f"for arg in \"$@\"; do printf '%s\\n' \"$arg\" >> {shlex.quote(str(args_file))}; done",
                 f"export PYTHONPATH={shlex.quote(str(_sdk_dir()))}",
                 f"exec {shlex.quote(sys.executable)} -m holons.echo_server \"$@\"",
                 "",
@@ -117,6 +120,7 @@ def _create_holon_fixture(tmp_path: Path, given_name: str, family_name: str) -> 
     return {
         "slug": slug,
         "pid_file": pid_file,
+        "args_file": args_file,
         "binary_path": wrapper,
         "port_file": tmp_path / ".op" / "run" / f"{slug}.port",
     }
@@ -134,6 +138,19 @@ def _wait_for_pid_file(path: Path, timeout: float = 5.0) -> int:
             pass
         time.sleep(0.025)
     raise AssertionError(f"timed out waiting for pid file {path}")
+
+
+def _wait_for_args_file(path: Path, timeout: float = 5.0) -> list[str]:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line]
+            if lines:
+                return lines
+        except OSError:
+            pass
+        time.sleep(0.025)
+    raise AssertionError(f"timed out waiting for args file {path}")
 
 
 def _pid_exists(pid: int) -> bool:
@@ -198,9 +215,11 @@ def test_connect_starts_slug_ephemerally_and_stops_on_disconnect(tmp_path: Path,
 
     channel = connect_module.connect(str(fixture["slug"]))
     pid = _wait_for_pid_file(Path(fixture["pid_file"]))
+    args = _wait_for_args_file(Path(fixture["args_file"]))
     try:
         out = _invoke_ping(channel, "ephemeral-python")
         assert out["message"] == "ephemeral-python"
+        assert args == ["serve", "--listen", "stdio://"]
     finally:
         connect_module.disconnect(channel)
 
@@ -214,7 +233,10 @@ def test_connect_writes_port_file_in_persistent_mode(tmp_path: Path, monkeypatch
     monkeypatch.setenv("OPPATH", str(tmp_path / ".op-home"))
     monkeypatch.setenv("OPBIN", str(tmp_path / ".op-bin"))
 
-    channel = connect_module.connect(str(fixture["slug"]), ConnectOptions(timeout=5.0, start=True))
+    channel = connect_module.connect(
+        str(fixture["slug"]),
+        ConnectOptions(timeout=5.0, transport="tcp", start=True),
+    )
     pid = _wait_for_pid_file(Path(fixture["pid_file"]))
     try:
         out = _invoke_ping(channel, "persistent-python")
