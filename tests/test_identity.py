@@ -17,7 +17,7 @@ def test_parse_holon(tmp_path):
         'lang: "python"\n'
         'parents: []\n'
         'reproduction: "manual"\n'
-        'generated_by: "sophia-who"\n'
+        'generated_by: "dummy-test"\n'
         'proto_status: draft\n'
     )
 
