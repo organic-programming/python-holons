@@ -131,7 +131,11 @@ def _auto_register_holonmeta(server: grpc.Server) -> None:
     holon_yaml_path = "holon.yaml"
     if not os.path.exists(holon_yaml_path):
         return
-    describe.register(server, "./protos", holon_yaml_path)
+    try:
+        describe.register(server, "./protos", holon_yaml_path)
+    except Exception as exc:
+        # Describe metadata should improve discoverability, not block serving.
+        logger.warning("skipping HolonMeta Describe auto-registration: %s", exc)
 
 
 class _StdioServeBridge:
