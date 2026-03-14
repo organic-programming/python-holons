@@ -93,8 +93,15 @@ def connect(target: str, opts: ConnectOptions | None = None) -> grpc.Channel:
         _wait_ready(channel, options.timeout)
         return channel
 
-    advertised_uri, proc = _start_tcp_holon(binary_path, options.timeout)
-    channel = _dial_ready(_normalize_dial_target(advertised_uri), options.timeout)
+    if options.transport == "unix":
+        advertised_uri, proc = _start_unix_holon(binary_path, entry.slug, port_file, options.timeout)
+    else:
+        advertised_uri, proc = _start_tcp_holon(binary_path, options.timeout)
+    try:
+        channel = _dial_ready(_normalize_dial_target(advertised_uri), options.timeout)
+    except Exception:
+        _stop_process(proc)
+        raise
 
     def _cleanup() -> None:
         if ephemeral:
@@ -122,7 +129,7 @@ def _normalize_options(opts: ConnectOptions | None) -> ConnectOptions:
     options = opts or ConnectOptions()
     timeout = options.timeout if options.timeout and options.timeout > 0 else DEFAULT_TIMEOUT
     transport = (options.transport or "stdio").strip().lower()
-    if transport not in {"tcp", "stdio"}:
+    if transport not in {"tcp", "stdio", "unix"}:
         raise ValueError(f"unsupported transport {options.transport!r}")
     return ConnectOptions(
         timeout=timeout,
@@ -219,6 +226,49 @@ def _start_tcp_holon(binary_path: str, timeout: float) -> tuple[str, subprocess.
     raise RuntimeError("timed out waiting for holon startup")
 
 
+def _start_unix_holon(
+    binary_path: str, slug: str, port_file: str, timeout: float
+) -> tuple[str, subprocess.Popen[str]]:
+    uri = _default_unix_socket_uri(slug, port_file)
+    socket_path = uri.removeprefix("unix://")
+    proc = subprocess.Popen(
+        [binary_path, "serve", "--listen", uri],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    stderr_lines: list[str] = []
+
+    if proc.stderr is None:
+        _stop_process(proc)
+        raise RuntimeError("child process must expose stderr pipe")
+
+    def _stderr_reader() -> None:
+        assert proc.stderr is not None
+        for line in proc.stderr:
+            stderr_lines.append(line)
+
+    threading.Thread(target=_stderr_reader, daemon=True).start()
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            stderr_text = "".join(stderr_lines).strip()
+            details = f": {stderr_text}" if stderr_text else ""
+            raise RuntimeError(f"holon exited before binding unix socket ({proc.returncode}){details}")
+
+        if Path(socket_path).exists():
+            return uri, proc
+
+        time.sleep(0.02)
+
+    _stop_process(proc)
+    stderr_text = "".join(stderr_lines).strip()
+    details = f": {stderr_text}" if stderr_text else ""
+    raise RuntimeError(f"timed out waiting for unix holon startup{details}")
+
+
 def _resolve_binary_path(entry: discover.HolonEntry) -> str:
     if entry.manifest is None:
         raise ValueError(f'holon "{entry.slug}" has no manifest')
@@ -244,6 +294,38 @@ def _resolve_binary_path(entry: discover.HolonEntry) -> str:
 
 def _default_port_file_path(slug: str) -> str:
     return str(Path.cwd().joinpath(".op", "run", f"{slug}.port"))
+
+
+def _default_unix_socket_uri(slug: str, port_file: str) -> str:
+    label = _socket_label(slug)
+    hash_value = _fnv1a64(port_file.encode("utf-8")) & 0xFFFFFFFFFFFF
+    return f"unix:///tmp/holons-{label}-{hash_value:012x}.sock"
+
+
+def _socket_label(slug: str) -> str:
+    chars: list[str] = []
+    last_dash = False
+    for char in slug.strip().lower():
+        if char.isascii() and (char.isalpha() or char.isdigit()):
+            chars.append(char)
+            last_dash = False
+        elif char in "-_" and chars and not last_dash:
+            chars.append("-")
+            last_dash = True
+
+        if len(chars) >= 24:
+            break
+
+    label = "".join(chars).strip("-")
+    return label or "socket"
+
+
+def _fnv1a64(data: bytes) -> int:
+    hash_value = 0xCBF29CE484222325
+    for byte in data:
+        hash_value ^= byte
+        hash_value = (hash_value * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return hash_value
 
 
 def _write_port_file(port_file: str, uri: str) -> None:

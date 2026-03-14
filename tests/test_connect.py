@@ -257,6 +257,38 @@ def test_connect_writes_port_file_in_persistent_mode(tmp_path: Path, monkeypatch
         _terminate_pid(pid)
 
 
+def test_connect_writes_unix_port_file_in_persistent_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    fixture = _create_holon_fixture(tmp_path, "Connect", "Unix")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPPATH", str(tmp_path / ".op-home"))
+    monkeypatch.setenv("OPBIN", str(tmp_path / ".op-bin"))
+
+    channel = connect_module.connect(
+        str(fixture["slug"]),
+        ConnectOptions(timeout=5.0, transport="unix", start=True),
+    )
+    pid = _wait_for_pid_file(Path(fixture["pid_file"]))
+    try:
+        out = _invoke_ping(channel, "unix-python")
+        assert out["message"] == "unix-python"
+    finally:
+        connect_module.disconnect(channel)
+
+    port_target = Path(fixture["port_file"]).read_text(encoding="utf-8").strip()
+    assert re.match(r"^unix:///tmp/holons-", port_target)
+    assert _pid_exists(pid)
+
+    reused = connect_module.connect(str(fixture["slug"]))
+    try:
+        out = _invoke_ping(reused, "unix-reuse-python")
+        assert out["message"] == "unix-reuse-python"
+    finally:
+        connect_module.disconnect(reused)
+        _terminate_pid(pid)
+
+
 def test_connect_reuses_existing_port_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     fixture = _create_holon_fixture(tmp_path, "Connect", "Reuse")
     monkeypatch.chdir(tmp_path)
