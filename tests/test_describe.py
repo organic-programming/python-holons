@@ -46,6 +46,13 @@ message PingResponse {
 }
 """
 
+_INVALID_ECHO_PROTO = """\
+syntax = "proto3";
+package echo.v1;
+
+import public "echo/v1/echo.proto";
+"""
+
 _HOLON_YAML = """\
 given_name: Echo
 family_name: Server
@@ -108,13 +115,18 @@ _HELPER_SCRIPT = textwrap.dedent(
 )
 
 
-def _write_echo_holon(root: Path, *, include_proto: bool = True) -> None:
+def _write_echo_holon(
+    root: Path,
+    *,
+    include_proto: bool = True,
+    proto_text: str = _ECHO_PROTO,
+) -> None:
     (root / "holon.yaml").write_text(_HOLON_YAML, encoding="utf-8")
     if not include_proto:
         return
     proto_path = root / "protos" / "echo" / "v1"
     proto_path.mkdir(parents=True, exist_ok=True)
-    (proto_path / "echo.proto").write_text(_ECHO_PROTO, encoding="utf-8")
+    (proto_path / "echo.proto").write_text(proto_text, encoding="utf-8")
 
 
 def _find_field(fields, name: str):
@@ -134,8 +146,9 @@ def _start_describe_helper(
     *,
     include_proto: bool,
     with_echo: bool,
+    proto_text: str = _ECHO_PROTO,
 ) -> tuple[subprocess.Popen[str], str, Path]:
-    _write_echo_holon(workdir, include_proto=include_proto)
+    _write_echo_holon(workdir, include_proto=include_proto, proto_text=proto_text)
 
     with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as handle:
         handle.write(_HELPER_SCRIPT)
@@ -259,3 +272,30 @@ def test_serve_describe_gracefully_handles_missing_protos(tmp_path: Path):
     assert response.slug == "echo-server"
     assert response.motto == "Reply precisely."
     assert list(response.services) == []
+
+
+def test_serve_describe_gracefully_handles_invalid_protos(tmp_path: Path):
+    proc, uri, script_path = _start_describe_helper(
+        tmp_path,
+        include_proto=True,
+        with_echo=True,
+        proto_text=_INVALID_ECHO_PROTO,
+    )
+    try:
+        channel = dial_uri(uri)
+        try:
+            stub = channel.unary_unary(
+                "/echo.v1.Echo/Ping",
+                request_serializer=lambda value: json.dumps(value).encode("utf-8"),
+                response_deserializer=lambda raw: json.loads(raw.decode("utf-8")),
+            )
+            response = stub({"message": "invalid-proto"}, timeout=5)
+        finally:
+            channel.close()
+    finally:
+        rc = _stop_process(proc)
+        script_path.unlink(missing_ok=True)
+        assert rc == 0
+
+    assert response["message"] == "invalid-proto"
+    assert response["sdk"] == "python-holons"
